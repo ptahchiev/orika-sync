@@ -5,6 +5,7 @@ import static org.junit.Assert.assertNotNull;
 import java.lang.reflect.InvocationTargetException;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
@@ -23,6 +24,7 @@ import ma.glasnost.orika.metadata.TypeFactory;
 import org.hibernate.Hibernate;
 import org.junit.Assert;
 import org.junit.Test;
+import org.reflections.Reflections;
 import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.TestExecutionListeners;
 import org.springframework.test.context.junit4.AbstractJUnit4SpringContextTests;
@@ -45,13 +47,12 @@ public class Synchronize2Test extends AbstractJUnit4SpringContextTests {
     @PersistenceContext(name = "entityManagerFactory")
     private EntityManager entityManager;
     
-    private Synchronizer mapper;
+    private Synchronizer mapper = new Synchronizer();
 
     @Test
     @Transactional
     public void testSync() throws IllegalAccessException, InvocationTargetException, NoSuchMethodException, InstantiationException {
 
-    	mapper = new Synchronizer();
     	
         final Product source = entityManager.find(Product.class, 20l);
 
@@ -104,32 +105,26 @@ public class Synchronize2Test extends AbstractJUnit4SpringContextTests {
 			// to scan and register automatically all entities and AbstractCatalogableEntity
 			//
 			
-			configureSync(factory, Product.class, Price.class, CatalogVersion.class);
+			configureSync(factory, "com.db");
 		}
 
 		
-		void configureSync(MapperFactory factory, Class<? extends AbstractEntity> ...classes) {
+		void configureSync(MapperFactory factory, String packageName) {
 			
-			for (final Class<? extends AbstractEntity> cls : classes) {
-				
-				ClassMapBuilder<? extends AbstractEntity, ? extends AbstractEntity> cmb = factory.classMap(cls, cls).exclude("pk");
-				
-				if(AbstractCatalogableEntity.class.isAssignableFrom(cls)) {
-					// register ObjectFactory
-					factory.registerObjectFactory(new AbstractCatalogableEntityFactory(){
+			Reflections reflections = new Reflections(packageName);
 
-						protected AbstractCatalogableEntity newInstance() {
-							try {
-								return (AbstractCatalogableEntity) cls.newInstance();
-							} catch (Exception e) {
-								e.printStackTrace();
-								throw new RuntimeException("Can not instantiate "+cls, e);
-							}
-						}}, TypeFactory.valueOf(cls));
+			Set<Class<? extends AbstractEntity>> subTypes = reflections.getSubTypesOf(AbstractEntity.class);
+			
+			for (final Class<? extends AbstractEntity> cls : subTypes) {
+				if(AbstractCatalogableEntity.class.isAssignableFrom(cls)) {
+					ClassMapBuilder<? extends AbstractEntity, ? extends AbstractEntity> cmb = factory.classMap(cls, cls).exclude("pk");
+					// register ObjectFactory
+					Type<? extends AbstractEntity> targetClass = TypeFactory.valueOf(cls);
+					factory.registerObjectFactory(new AbstractCatalogableEntityFactory(cls), targetClass);
 					
 					cmb.exclude("catalogVersion").customize(new AbstractCatalogableEntityMapper());
+					cmb.byDefault().register();
 				}
-				cmb.byDefault().register();
 			}
 		}
 		
@@ -137,10 +132,25 @@ public class Synchronize2Test extends AbstractJUnit4SpringContextTests {
     };
     
     
-    public abstract  class AbstractCatalogableEntityFactory<T extends AbstractCatalogableEntity> implements ObjectFactory<T> {
+    public  class AbstractCatalogableEntityFactory<T extends AbstractCatalogableEntity> implements ObjectFactory<T> {
 
+    	protected Class<T> targetClass;
     	
-    	protected abstract T newInstance();
+    	
+    	public AbstractCatalogableEntityFactory(Class<T> targetClass) {
+			super();
+			this.targetClass = targetClass;
+		}
+
+
+		protected  T newInstance(Object obj) {
+    		try {
+				return (T) targetClass.newInstance();
+			} catch (Exception e) {
+				e.printStackTrace();
+				throw new RuntimeException("Can not instantiate "+targetClass, e);
+			}
+    	}
     	
     	
         @SuppressWarnings("unchecked")
@@ -166,9 +176,9 @@ public class Synchronize2Test extends AbstractJUnit4SpringContextTests {
 				return singleResult;
             } catch (javax.persistence.NoResultException nre) {
             	System.out.println("Not found online version, create new one"+ obj.getClass());
-                onlineEntity = newInstance();
+                onlineEntity = newInstance(obj);
                 onlineEntity.setCatalogVersion(onlineCatalogVersion);
-                entityManager.persist(onlineEntity);
+                entityManager.merge(onlineEntity);
                 entityManager.flush();
                 return onlineEntity;
             }
