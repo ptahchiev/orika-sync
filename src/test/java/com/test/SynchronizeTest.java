@@ -16,6 +16,7 @@ import ma.glasnost.orika.MapperFacade;
 import ma.glasnost.orika.MapperFactory;
 import ma.glasnost.orika.MappingContext;
 import ma.glasnost.orika.ObjectFactory;
+import ma.glasnost.orika.impl.ConfigurableMapper;
 import ma.glasnost.orika.impl.DefaultMapperFactory;
 import ma.glasnost.orika.metadata.Type;
 import ma.glasnost.orika.metadata.TypeFactory;
@@ -51,6 +52,7 @@ public class SynchronizeTest extends AbstractJUnit4SpringContextTests {
         final Product target = (Product) synchronize(source);
 
         assertNotNull(target);
+        assertNotNull(target.getCatalogVersion());
     }
 
     private AbstractCatalogableEntity synchronize(AbstractCatalogableEntity sourceEntity) throws IllegalAccessException, InvocationTargetException, NoSuchMethodException, InstantiationException {
@@ -101,7 +103,6 @@ public class SynchronizeTest extends AbstractJUnit4SpringContextTests {
     
     class AbstractCatalogableEntityFactory implements ObjectFactory<AbstractCatalogableEntity> {
 
-        @Override
         public AbstractCatalogableEntity create(Object obj, MappingContext mappingContext) {
 
             final AbstractCatalogableEntity source = (AbstractCatalogableEntity) obj;
@@ -143,4 +144,17 @@ public class SynchronizeTest extends AbstractJUnit4SpringContextTests {
             }
         }
     }
+    
+    
+    public static class MyMapper extends ConfigurableMapper {
+
+		@Override
+		protected void configure(MapperFactory factory) {
+			// TODO Auto-generated method stub
+			super.configure(factory);
+		}
+    	
+    };
+    
+    
 }
